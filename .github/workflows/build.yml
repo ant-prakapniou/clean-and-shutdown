@@ -21,6 +21,8 @@ jobs:
         with:
           dotnet-version: '11.0.x'
           dotnet-quality: 'preview'
+          cache: true
+          cache-dependency-path: '**/*.csproj'
 
       - name: Show .NET info
         run: dotnet --info
@@ -33,3 +35,21 @@ jobs:
 
       - name: Test
         run: dotnet test -c Release --no-build --verbosity normal
+
+        
+      - name: Publish single-file exe
+        run: |
+          dotnet publish src/CleanAndShutdown.Cli `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -o publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanAndShutdown-win-x64
+          path: publish/CleanAndShutdown.Cli.exe
+          if-no-files-found: error

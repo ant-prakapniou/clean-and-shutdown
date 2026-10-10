@@ -1,5 +1,7 @@
 # CleanAndShutdown
 
+[![Build and Test](https://github.com/ant-prakapniou/clean-and-shutdown/actions/workflows/build.yml/badge.svg)](https://github.com/ant-prakapniou/clean-and-shutdown/actions/workflows/build.yml)
+
 A small Windows utility that cleans temporary directories and shuts the
 machine down — with per-folder size thresholds, structured logging, and
 a cancellable shutdown countdown.
