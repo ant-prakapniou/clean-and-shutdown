@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="CleanAndShutdown.Cli/CleanAndShutdown.Cli.csproj" Id="a5f6583a-62a1-4c3f-bd0d-e12c21faa712" />
+    <Project Path="CleanAndShutdown.Core/CleanAndShutdown.Core.csproj" Id="405da629-62a3-4e2f-9945-7aea9c5adccf" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="CleanAndShutdown.Tests/CleanAndShutdown.Tests.csproj" Id="7d8c83e9-7468-491a-9582-b8da401dc782" />
+  </Folder>
+</Solution>
