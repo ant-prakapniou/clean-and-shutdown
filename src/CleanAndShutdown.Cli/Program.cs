@@ -26,6 +26,12 @@ internal static class Program
     /// </returns>
     private static async Task<int> Main(string[] args)
     {
+        // Pin the current directory to the executable's location so that
+        // relative paths (most importantly, the log directory) resolve
+        // consistently regardless of how the process was launched
+        // (Explorer, terminal, Task Scheduler, etc.).
+        Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
         // The bootstrap configuration is read before Serilog is
         // configured: we need the "Serilog" section from appsettings.json
         // to capture any errors that occur during host and DI setup.
