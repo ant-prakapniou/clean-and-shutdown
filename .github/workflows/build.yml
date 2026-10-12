@@ -53,6 +53,6 @@ jobs:
         with:
           name: CleanAndShutdown-win-x64
           path: |
-            publish/CleanAndShutdown.Cli.exe
+            publish/CleanAndShutdown.exe
             publish/appsettings.json
           if-no-files-found: error
