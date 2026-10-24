@@ -26,10 +26,16 @@ target it:
 5. If the size is **at or above** the threshold, the top-level entries
    are deleted one by one. Locked or inaccessible entries are skipped
    and counted — they do not abort the run.
-6. After all targets have been processed, shows a countdown and shuts
-   the machine down (unless disabled or running in dry-run mode).
+6. After all targets have been processed, renders a per-second
+   countdown in the console and then shuts the machine down (unless
+   disabled or running in dry-run mode). The countdown is implemented
+   in the orchestrator and reported through the same progress channel
+   as cleanup progress, with the target name `(shutdown)`;
+   `shutdown.exe` is invoked with `/t 0` only after the countdown
+   completes.
 
-A `Ctrl+C` during the countdown cancels the shutdown.
+A `Ctrl+C` during the countdown cancels the shutdown before
+`shutdown.exe` is invoked.
 
 ### Default targets
 
@@ -82,7 +88,7 @@ The design is layered:
   `System.IO` outside `PhysicalFileSystem`.
 - **Cli** — thin wrapper: reads configuration, builds the DI container,
   prints the banner and the final report, handles `Ctrl+C`.
-- **Tests** — 38 unit tests covering the base target logic, the
+- **Tests** — 41 unit tests covering the base target logic, the
   orchestrator, and the size calculator. The file system and shutdown
   service are abstracted so tests never touch a real disk or shut down
   the machine.
@@ -226,9 +232,11 @@ dotnet build .\CleanAndShutdown.Tests
   cancellation, progress reporting, size reporting.
 - `CleanupOrchestratorTests` — target ordering, unknown-target skipping,
   failure isolation, shutdown policy, cancellation, aggregation,
-  progress annotation, constructor guards.
+  progress annotation, shutdown countdown (event ordering, zero delay,
+  cancellation before `ShutdownNow`, `onSummaryReady` ordering),
+  constructor guards.
 
-Total: **38 tests**, all green.
+Total: **41 tests**, all green.
 
 ---
 
@@ -252,6 +260,15 @@ A few decisions worth knowing about:
   clean `%SystemRoot%\Temp` and the Update cache. Relying on a `.bat`
   wrapper with `Start-Process -Verb RunAs` was fragile; the manifest is
   the correct mechanism.
+- **Countdown lives in the orchestrator, not in the shutdown service.**
+  `IShutdownService` is a thin wrapper over `shutdown.exe`; it does not
+  wait. The per-second countdown is reported through the same
+  `IProgress<CleanupProgress>` channel as cleanup progress, using
+  `TargetName = "(shutdown)"`. This keeps the shutdown service
+  trivially testable and makes `Ctrl+C` cancel before `shutdown.exe`
+  is ever invoked. The CLI prints the final report before the countdown
+  starts (via the `onSummaryReady` callback), so the report is visible
+  even if `shutdown.exe` terminates the process shortly afterwards.
 
 ---
 

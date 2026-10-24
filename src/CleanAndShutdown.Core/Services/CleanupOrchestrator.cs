@@ -37,6 +37,13 @@ public sealed class CleanupOrchestrator(
     IOptions<CleanupOptions> options,
     ILogger<CleanupOrchestrator> logger)
 {
+    /// <summary>
+    /// Target name used in progress reports for the shutdown countdown.
+    /// Chosen so that the CLI can distinguish countdown events from
+    /// cleanup progress without a separate progress type.
+    /// </summary>
+    private const string ShutdownTargetName = "(shutdown)";
+
     private readonly IEnumerable<ICleanupTarget> _targets = targets ?? throw new ArgumentNullException(nameof(targets));
     private readonly IShutdownService _shutdownService = shutdownService ?? throw new ArgumentNullException(nameof(shutdownService));
     private readonly CleanupOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
@@ -49,12 +56,22 @@ public sealed class CleanupOrchestrator(
     /// </summary>
     /// <param name="progress">
     /// Optional progress sink that receives one event per processed
-    /// entry, annotated with the target name. May be
-    /// <see langword="null"/>, in which case no progress is reported.
+    /// entry, annotated with the target name, and one event per second
+    /// during the shutdown countdown (with
+    /// <see cref="CleanupProgress.TargetName"/> set to
+    /// <c>"(shutdown)"</c>). May be <see langword="null"/>, in which
+    /// case no progress is reported.
     /// </param>
     /// <param name="ct">
     /// Cancellation token that aborts both the cleanup and the shutdown
     /// countdown.
+    /// </param>
+    /// <param name="onSummaryReady">
+    /// Optional callback invoked with the aggregated summary after the
+    /// cleanup finishes and before the shutdown countdown starts. The
+    /// CLI uses it to print the final report before
+    /// <c>shutdown.exe</c> may terminate the process. May be
+    /// <see langword="null"/>.
     /// </param>
     /// <returns>
     /// A <see cref="CleanupSummary"/> describing the outcome of the run.
@@ -65,7 +82,8 @@ public sealed class CleanupOrchestrator(
     /// </exception>
     public async Task<CleanupSummary> RunAsync(
         IProgress<CleanupProgress>? progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<CleanupSummary>? onSummaryReady = null)
     {
         _logger.LogInformation("Starting cleanup (dry-run: {DryRun})", _options.DryRun);
 
@@ -133,6 +151,11 @@ public sealed class CleanupOrchestrator(
 
         LogSummary(summary);
 
+        // Let the CLI print the final report before the countdown starts,
+        // so the summary is visible even if shutdown.exe terminates the
+        // process shortly afterwards.
+        onSummaryReady?.Invoke(summary);
+
         // Shutdown phase.
         if (!_options.ShutdownAfterCleanup)
         {
@@ -150,12 +173,7 @@ public sealed class CleanupOrchestrator(
 
         try
         {
-            await _shutdownService
-                .ShutdownAsync(
-                    TimeSpan.FromSeconds(_options.ShutdownDelaySeconds),
-                    reason: "CleanAndShutdown: scheduled cleanup",
-                    ct)
-                .ConfigureAwait(false);
+            await RunShutdownCountdownAsync(progress, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -163,7 +181,41 @@ public sealed class CleanupOrchestrator(
             throw;
         }
 
+        _shutdownService.ShutdownNow("CleanAndShutdown: scheduled cleanup");
+
         return summary;
+    }
+
+    /// <summary>
+    /// Reports one progress event per second of the shutdown countdown
+    /// and waits one second between events. Cancellation is immediate:
+    /// the next tick throws <see cref="OperationCanceledException"/> and
+    /// <see cref="IShutdownService.ShutdownNow"/> is not called.
+    /// </summary>
+    /// <param name="progress">
+    /// Optional progress sink that receives one countdown event per
+    /// second. May be <see langword="null"/>.
+    /// </param>
+    /// <param name="ct">Cancellation token for the countdown.</param>
+    /// <remarks>
+    /// Do not log inside this loop: the CLI renders the countdown with
+    /// a carriage return on the same <see cref="Console.Out"/> stream
+    /// that Serilog writes to, and an interleaved log line would
+    /// corrupt the visual output.
+    /// </remarks>
+    private async Task RunShutdownCountdownAsync(
+        IProgress<CleanupProgress>? progress,
+        CancellationToken ct)
+    {
+        var total = _options.ShutdownDelaySeconds;
+        if (total <= 0) return;
+
+        for (var elapsed = 1; elapsed <= total; elapsed++)
+        {
+            progress?.Report(new CleanupProgress(ShutdownTargetName, elapsed, total));
+
+            await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

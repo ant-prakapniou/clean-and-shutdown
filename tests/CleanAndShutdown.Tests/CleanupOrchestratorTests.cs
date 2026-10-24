@@ -13,11 +13,18 @@ namespace CleanAndShutdown.Tests;
 /// </summary>
 /// <remarks>
 /// Covers ordering, target resolution, failure isolation, shutdown
-/// policy, cancellation, result aggregation, and progress reporting.
+/// policy, cancellation, result aggregation, progress reporting, and
+/// the shutdown countdown.
 /// </remarks>
 public sealed class CleanupOrchestratorTests
 {
     private const long MB = 1024L * 1024L;
+
+    /// <summary>
+    /// Must match the target name that
+    /// <c>CleanupOrchestrator</c> uses for shutdown countdown events.
+    /// </summary>
+    private const string ShutdownProgressName = "(shutdown)";
 
     // ============================================================
     // Helpers for building the orchestrator
@@ -178,7 +185,6 @@ public sealed class CleanupOrchestratorTests
         await orchestrator.RunAsync(progress: null, TestContext.Current.CancellationToken);
 
         // Assert
-        shutdown.ShutdownAsyncCallCount.Should().Be(0);
         shutdown.ShutdownNowCallCount.Should().Be(0);
     }
 
@@ -203,36 +209,123 @@ public sealed class CleanupOrchestratorTests
         await orchestrator.RunAsync(progress: null, TestContext.Current.CancellationToken);
 
         // Assert
-        shutdown.ShutdownAsyncCallCount.Should().Be(0);
         shutdown.ShutdownNowCallCount.Should().Be(0);
     }
 
     // ============================================================
-    // Shutdown with the configured delay
+    // Shutdown countdown
     // ============================================================
 
     [Fact]
-    public async Task RunAsync_ShutdownEnabled_CallsShutdownWithConfiguredDelay()
+    public async Task RunAsync_ShutdownEnabled_ReportsCountdownAndCallsShutdownNow()
     {
         // Arrange
         var shutdown = new FakeShutdownService();
         var options = DefaultOptions(TargetOptions("A"));
-        options.ShutdownDelaySeconds = 7;
+        options.ShutdownDelaySeconds = 3;
 
         var orchestrator = CreateOrchestrator(
             options,
             new[] { new FakeCleanupTarget("A") },
             shutdown);
 
+        var reports = new List<CleanupProgress>();
+        var progress = new SyncProgress<CleanupProgress>(p => reports.Add(p));
+
         // Act
-        await orchestrator.RunAsync(progress: null, TestContext.Current.CancellationToken);
+        await orchestrator.RunAsync(progress, TestContext.Current.CancellationToken);
 
         // Assert
-        shutdown.ShutdownAsyncCallCount.Should().Be(1);
-        shutdown.LastShutdownDelay.Should().Be(TimeSpan.FromSeconds(7));
-        shutdown.LastShutdownReason.Should().Contain("CleanAndShutdown");
-        // ShutdownAsync delegates to ShutdownNow after the delay.
+        var countdown = reports
+            .Where(r => r.TargetName == ShutdownProgressName)
+            .ToList();
+
+        countdown.Should().HaveCount(3);
+        countdown.Select(r => r.Current).Should().BeEquivalentTo(new[] { 1, 2, 3 });
+        countdown.Should().AllSatisfy(r => r.Total.Should().Be(3));
+
         shutdown.ShutdownNowCallCount.Should().Be(1);
+        shutdown.LastShutdownReason.Should().Contain("CleanAndShutdown");
+    }
+
+    [Fact]
+    public async Task RunAsync_ZeroDelay_SkipsCountdownAndCallsShutdownNowImmediately()
+    {
+        // Arrange
+        var shutdown = new FakeShutdownService();
+        var options = DefaultOptions(TargetOptions("A"));
+        options.ShutdownDelaySeconds = 0;
+
+        var orchestrator = CreateOrchestrator(
+            options,
+            new[] { new FakeCleanupTarget("A") },
+            shutdown);
+
+        var reports = new List<CleanupProgress>();
+        var progress = new SyncProgress<CleanupProgress>(p => reports.Add(p));
+
+        // Act
+        await orchestrator.RunAsync(progress, TestContext.Current.CancellationToken);
+
+        // Assert
+        reports.Should().NotContain(r => r.TargetName == ShutdownProgressName);
+        shutdown.ShutdownNowCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RunAsync_CallsOnSummaryReadyBeforeCountdown()
+    {
+        // Arrange
+        var shutdown = new FakeShutdownService();
+        var options = DefaultOptions(TargetOptions("A"));
+        options.ShutdownDelaySeconds = 2;
+
+        var orchestrator = CreateOrchestrator(
+            options,
+            new[] { new FakeCleanupTarget("A") },
+            shutdown);
+
+        var order = new List<string>();
+        var progress = new SyncProgress<CleanupProgress>(p =>
+        {
+            if (p.TargetName == ShutdownProgressName)
+                order.Add($"countdown:{p.Current}");
+        });
+
+        // Act
+        await orchestrator.RunAsync(
+            progress,
+            TestContext.Current.CancellationToken,
+            onSummaryReady: _ => order.Add("summary"));
+
+        // Assert
+        order.Should().ContainInOrder("summary", "countdown:1", "countdown:2");
+        shutdown.ShutdownNowCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RunAsync_ShutdownDisabled_DoesNotReportCountdown()
+    {
+        // Arrange
+        var shutdown = new FakeShutdownService();
+        var options = DefaultOptions(TargetOptions("A"));
+        options.ShutdownAfterCleanup = false;
+        options.ShutdownDelaySeconds = 5;
+
+        var orchestrator = CreateOrchestrator(
+            options,
+            new[] { new FakeCleanupTarget("A") },
+            shutdown);
+
+        var reports = new List<CleanupProgress>();
+        var progress = new SyncProgress<CleanupProgress>(p => reports.Add(p));
+
+        // Act
+        await orchestrator.RunAsync(progress, TestContext.Current.CancellationToken);
+
+        // Assert
+        reports.Should().NotContain(r => r.TargetName == ShutdownProgressName);
+        shutdown.ShutdownNowCallCount.Should().Be(0);
     }
 
     // ============================================================
@@ -260,10 +353,10 @@ public sealed class CleanupOrchestratorTests
     }
 
     [Fact]
-    public async Task RunAsync_CancelledDuringShutdownDelay_Throws()
+    public async Task RunAsync_CancelledDuringCountdown_DoesNotCallShutdownNow()
     {
         // Arrange
-        var shutdown = new FakeShutdownService { HonorDelay = true };
+        var shutdown = new FakeShutdownService();
         var options = DefaultOptions(TargetOptions("A"));
         options.ShutdownDelaySeconds = 10; // long enough to be cancelled
 
@@ -280,6 +373,7 @@ public sealed class CleanupOrchestratorTests
 
         // Assert
         await act.Should().ThrowAsync<OperationCanceledException>();
+        shutdown.ShutdownNowCallCount.Should().Be(0);
     }
 
     // ============================================================

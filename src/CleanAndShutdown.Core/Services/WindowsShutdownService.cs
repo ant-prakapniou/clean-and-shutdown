@@ -55,36 +55,6 @@ public sealed class WindowsShutdownService : IShutdownService
         RunShutdown(args);
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Waits for the requested delay before delegating to
-    /// <see cref="ShutdownNow"/>. The delay is cancellable: if
-    /// <paramref name="ct"/> fires during the wait, no shutdown command
-    /// is issued.
-    /// </remarks>
-    public async Task ShutdownAsync(
-        TimeSpan delay,
-        string? reason,
-        CancellationToken ct)
-    {
-        if (delay < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(delay), "Delay must be non-negative.");
-
-        _logger.LogInformation(
-            "Shutdown scheduled in {Seconds:F1} second(s)",
-            delay.TotalSeconds);
-
-        // Wait for the delay. If cancelled, Task.Delay throws and
-        // shutdown.exe is never launched.
-        await Task.Delay(delay, ct).ConfigureAwait(false);
-
-        // Double-check: ct could have been cancelled between Delay
-        // completing and this line. Unlikely but theoretically possible.
-        ct.ThrowIfCancellationRequested();
-
-        ShutdownNow(reason);
-    }
-
     /// <summary>
     /// Executes <c>shutdown.exe</c> with the specified arguments and
     /// inspects the exit code.

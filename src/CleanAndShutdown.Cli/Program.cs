@@ -16,6 +16,13 @@ namespace CleanAndShutdown.Cli;
 internal static class Program
 {
     /// <summary>
+    /// Target name used in progress reports for the shutdown countdown.
+    /// Must match the value reported by
+    /// <c>CleanupOrchestrator.RunShutdownCountdownAsync</c>.
+    /// </summary>
+    private const string ShutdownProgressName = "(shutdown)";
+
+    /// <summary>
     /// Application entry point.
     /// </summary>
     /// <param name="args">Command-line arguments.</param>
@@ -69,6 +76,17 @@ internal static class Program
                 // immediately: give the orchestrator a chance to finish
                 // the current step cleanly.
                 e.Cancel = true;
+
+                // The countdown and cleanup progress are rendered with a
+                // leading carriage return and no trailing newline. Without
+                // this, the Serilog line below would be appended to the
+                // current progress line. Do not do this when stdout is
+                // redirected: there is no partial line to finish.
+                if (!Console.IsOutputRedirected)
+                {
+                    Console.WriteLine();
+                }
+
                 Log.Warning("Cancellation requested (Ctrl+C). Finishing current step...");
                 cts.Cancel();
             };
@@ -78,11 +96,16 @@ internal static class Program
 
             PrintBanner(options);
 
-            var progress = new Progress<CleanupProgress>(OnProgress);
+            // Synchronous progress: Progress<T> would dispatch callbacks
+            // asynchronously via SynchronizationContext, which can reorder
+            // events. That is visible both in the cleanup progress and in
+            // the per-second shutdown countdown.
+            var progress = new SyncProgress<CleanupProgress>(OnProgress);
 
-            var summary = await orchestrator.RunAsync(progress, cts.Token);
-
-            PrintSummary(summary);
+            var summary = await orchestrator.RunAsync(
+                progress,
+                cts.Token,
+                onSummaryReady: PrintSummary);
 
             return 0;
         }
@@ -183,16 +206,42 @@ internal static class Program
     }
 
     /// <summary>
-    /// Progress callback invoked once per processed entry.
+    /// Progress callback invoked once per processed entry, and once per
+    /// second during the shutdown countdown.
     /// </summary>
     /// <param name="p">The progress event.</param>
     /// <remarks>
-    /// The current line is overwritten using a carriage return so that
-    /// the counter updates in place. When a target has no entries
-    /// (<see cref="CleanupProgress.Total"/> is zero), nothing is printed.
+    /// Cleanup progress overwrites the current line using a carriage
+    /// return so the counter updates in place. The shutdown countdown
+    /// uses the same technique. When stdout is redirected (for example,
+    /// when launched from a scheduler), carriage returns are useless,
+    /// so each line is written separately instead.
     /// </remarks>
     private static void OnProgress(CleanupProgress p)
     {
+        if (p.TargetName == ShutdownProgressName)
+        {
+            var left = p.Total - p.Current;
+            if (left <= 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("  Shutting down...");
+                return;
+            }
+
+            var line = $"  Shutting down in {left,2} s... (Ctrl+C to cancel)";
+            if (Console.IsOutputRedirected)
+            {
+                Console.WriteLine(line);
+            }
+            else
+            {
+                Console.Write("\r" + line);
+                Console.Out.Flush();
+            }
+            return;
+        }
+
         if (p.Total <= 0) return;
 
         var percent = (int)Math.Floor((double)p.Current / p.Total * 100);

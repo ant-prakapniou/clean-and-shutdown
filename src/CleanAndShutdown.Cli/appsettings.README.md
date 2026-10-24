@@ -11,7 +11,7 @@ Bound to `CleanAndShutdown.Core.Models.CleanupOptions`.
 |---|---|---|---|
 | `DryRun` | bool | `false` | When `true`, the app reports what would be deleted but does not remove any files and does not shut down the machine. |
 | `ShutdownAfterCleanup` | bool | `true` | When `false`, the cleanup runs normally but the machine is not shut down. Useful for debugging and scheduled maintenance. |
-| `ShutdownDelaySeconds` | int | `5` | Number of seconds to wait before initiating shutdown. This window gives the user a chance to cancel with Ctrl+C. |
+| `ShutdownDelaySeconds` | int | `5` | Number of seconds in the shutdown countdown. The countdown is rendered in the console (one line per second); pressing `Ctrl+C` during the countdown cancels the shutdown, and `shutdown.exe` is not invoked. A value of `0` disables the countdown and shuts down immediately. |
 | `Targets` | array | (empty) | Ordered list of cleanup targets. See below. |
 
 ### `Cleanup.Targets[]`
@@ -41,13 +41,11 @@ documentation for the full schema.
 
 ### Log file location
 
-The file sink uses a **relative path** (`logs/cleanup-.log`), resolved
-against the **current working directory**:
-
-- when the executable is launched by double-clicking → the directory
-  containing the exe;
-- when launched from a terminal → the directory the terminal is in;
-- when launched with `dotnet run` → the project directory.
+The application pins the current working directory to the directory
+containing the executable (`AppContext.BaseDirectory`) at startup, so
+the file sink's relative path (`logs/cleanup-.log`) always resolves to
+a `logs/` folder next to the executable — regardless of how the
+process was launched (Explorer, terminal, Task Scheduler, `dotnet run`).
 
 The `logs/` folder is created automatically. Files roll daily and
 older files are kept for 7 days.
