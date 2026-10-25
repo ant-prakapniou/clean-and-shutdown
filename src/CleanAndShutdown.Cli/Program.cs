@@ -280,8 +280,8 @@ internal static class Program
             }
             else
             {
-                Console.WriteLine(
-                    $"  {r.TargetName,-22} deleted {r.DeletedCount}, skipped {r.SkippedCount} ({r.SizeBeforeMB:F2} MB before)");
+                var verb = summary.DryRun ? "would delete" : "deleted";
+                Console.WriteLine($"  {r.TargetName,-22} {verb} {r.DeletedCount}, skipped {r.SkippedCount} ({r.SizeBeforeMB:F2} MB before)");
             }
         }
 
