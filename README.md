@@ -130,12 +130,13 @@ stay side by side.
 
 Every GitHub release ships a single `.zip` containing both files:
 
+```
 CleanAndShutdown-vX.Y.Z-win-x64.zip
 ├── CleanAndShutdown.exe
 └── appsettings.json
+```
 
-Unpack it, run the `.exe`, and adjust `appsettings.json` as needed. See
-[`docs/publish.md`](docs/publish.md) for details.
+Unpack it, run the `.exe`, and adjust `appsettings.json` as needed.
 
 ---
 
