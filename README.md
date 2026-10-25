@@ -122,8 +122,19 @@ dotnet publish src\CleanAndShutdown.Cli -c Release `
     -p:EnableCompressionInSingleFile=true
 ```
 
-The output is a single `.exe` (roughly 15–20 MB) that runs without a
-separately installed .NET runtime. See
+The output is a self-contained `.exe` (roughly 40 MB) that runs without
+a separately installed .NET runtime. It still needs `appsettings.json`
+next to it: the application reads configuration from
+`AppContext.BaseDirectory`, so the executable and the JSON file must
+stay side by side.
+
+Every GitHub release ships a single `.zip` containing both files:
+
+CleanAndShutdown-vX.Y.Z-win-x64.zip
+├── CleanAndShutdown.exe
+└── appsettings.json
+
+Unpack it, run the `.exe`, and adjust `appsettings.json` as needed. See
 [`docs/publish.md`](docs/publish.md) for details.
 
 ---
@@ -214,13 +225,9 @@ The project uses **xUnit v3** with the **Microsoft.Testing.Platform**
 runner. Tests are built as an executable:
 
 ```powershell
-dotnet build .\CleanAndShutdown.Tests
-& ".\CleanAndShutdown.Tests\bin\Debug\net11.0-windows\CleanAndShutdown.Tests.exe"
+dotnet build .\tests\CleanAndShutdown.Tests
+& ".\tests\CleanAndShutdown.Tests\bin\Debug\net11.0-windows\CleanAndShutdown.Tests.exe"
 ```
-
-> `dotnet test` may report "Zero tests ran" when running against .NET 11
-> RC because the aggregated runner does not yet recognize MTP-based
-> projects. Invoke the test executable directly instead.
 
 ### Test coverage
 

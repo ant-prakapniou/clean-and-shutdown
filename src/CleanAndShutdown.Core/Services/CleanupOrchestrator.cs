@@ -238,7 +238,7 @@ public sealed class CleanupOrchestrator(
     /// <param name="results">The per-target results, in processing order.</param>
     /// <param name="duration">Wall-clock duration of the cleanup phase.</param>
     /// <returns>A fully populated <see cref="CleanupSummary"/>.</returns>
-    private static CleanupSummary BuildSummary(
+    private CleanupSummary BuildSummary(
         IReadOnlyList<CleanupResult> results,
         TimeSpan duration)
     {
@@ -246,6 +246,7 @@ public sealed class CleanupOrchestrator(
         {
             Results = results,
             Duration = duration,
+            DryRun = _options.DryRun,
             TotalDeleted = results.Sum(r => r.DeletedCount),
             TotalSkipped = results.Sum(r => r.SkippedCount),
             TotalSizeBeforeBytes = results.Sum(r => r.SizeBeforeBytes)

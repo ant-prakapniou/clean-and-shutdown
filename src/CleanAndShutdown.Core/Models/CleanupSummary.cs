@@ -30,6 +30,17 @@ public sealed record CleanupSummary
     public TimeSpan Duration { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the run was a dry run.
+    /// </summary>
+    /// <remarks>
+    /// Set by <c>CleanupOrchestrator.BuildSummary</c> from
+    /// <see cref="CleanupOptions.DryRun"/>. Used by the CLI to phrase the
+    /// final report correctly: a dry run reports what <em>would</em> have
+    /// been deleted, not what was deleted.
+    /// </remarks>
+    public bool DryRun { get; init; }
+
+    /// <summary>
     /// Gets the total number of entries deleted across all targets.
     /// </summary>
     /// <remarks>

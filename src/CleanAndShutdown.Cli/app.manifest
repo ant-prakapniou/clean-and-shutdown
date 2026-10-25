@@ -6,7 +6,7 @@
     configured in the .csproj. type="win32" is required for
     native-style manifests.
   -->
-	<assemblyIdentity version="1.0.0.0" name="CleanAndShutdown.Cli" type="win32" />
+	<assemblyIdentity version="1.0.0.0" name="CleanAndShutdown" type="win32" />
 
 	<!--
     Elevation. requireAdministrator forces Windows to show a UAC
